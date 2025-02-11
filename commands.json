@@ -1,0 +1,61 @@
+{
+ "Fimoz": {
+  "Category": "media",
+  "Args": [
+   "cmd",
+   "/C",
+   "start",
+   "Z:\\No_Laitis\\O_HET_FIMOZ.mp3",
+   "\u0026\u0026",
+   "start",
+   "Z:\\No_Laitis\\ShUE_PPSh.gif"
+  ],
+  "Description": "SHUE PPsh"
+ },
+ "Hello, world!": {
+  "Category": "system",
+  "Args": [
+   "cmd",
+   "/C",
+   "echo Hello, world!"
+  ],
+  "Description": "Выводит в командную строку Windows \"Hello world!\""
+ },
+ "Message": {
+  "Category": "",
+  "Args": [
+   "cmd",
+   "/C",
+   "msg * \"Это сообщение появится на экране!\""
+  ],
+  "Description": "Выводит в на экран \"Это сообщение появится на экране!\""
+ },
+ "Ping Google": {
+  "Category": "",
+  "Args": [
+   "cmd",
+   "/C",
+   "ping google.com"
+  ],
+  "Description": "Проверяет доступность Google."
+ },
+ "Play 92": {
+  "Category": "media",
+  "Args": [
+   "cmd",
+   "/C",
+   "start",
+   "Z:\\No_Laitis\\Valentin_Strykalo_-_92_47844601.mp3"
+  ],
+  "Description": "Воспроизводит музыку через Windows Media Player"
+ },
+ "dir": {
+  "Category": "",
+  "Args": [
+   "cmd",
+   "/C",
+   "dir"
+  ],
+  "Description": "Выводит список файлов и папок текущей директории"
+ }
+}
