@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 )
@@ -21,7 +23,7 @@ type commandMap map[string]commandStruct
 
 // MAIN
 func main() {
-	defer finish()
+	//defer finish()
 
 	// Загрузка существующих команд из файла
 	commands := loadCommandsFromFile("commands.json")
@@ -39,7 +41,7 @@ func main() {
 		Description: "SHUE PPsh",
 	})
 
-	commands.Execute("Fimoz")
+	commands.Execute("Play_92")
 
 	// Вывод всех команд
 	//selectAllFrom(commands)
@@ -49,6 +51,53 @@ func main() {
 
 	// Сохранение обновленной карты команд в файл
 	saveCommandsToFile("commands.json", commands)
+
+	createTCPListener("tcp", ":4545", commands)
+
+}
+
+// ЗАПУСК ПРОСЛУШКИ ЗАПРОСОВ. Принимает тип протокола, порт(адрес) и переменную commands для функции handleConnection(не совсем понимаю, что тут происходит, но походу тут метод Execute не видит command, так как он не определен в этой функции)
+func createTCPListener(protocol string, port string, commands commandMap) {
+	// Создаем listener
+	fmt.Printf("Клиент принимает запросы по протоколу %s на порту %s\n", protocol, port)
+	listener, err := net.Listen(protocol, port)
+	if err != nil {
+		fmt.Println(err, "❗ОШИБКА СОЕДИНЕНИЯ С СЕРВЕРОМ❗")
+		return
+	}
+	defer listener.Close() // Закрываем listener при завершении работы
+	fmt.Println("Client is listening...")
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		// Обрабатываем каждое соединение в отдельной горутине
+		go handleConnection(conn, commands)
+	}
+
+}
+
+// ФУНКЦИЯ для обработки входящего соединения. Из входящего запроса от сервера получает данные и передает их в command.Execute для выполнения
+func handleConnection(conn net.Conn, commands commandMap) {
+	// Создаем буферизованный читатель для чтения данных из соединения
+	reader := bufio.NewReader(conn)
+	// Читаем строку до символа новой строки
+	commandFromServer, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	// Удаляем символ новой строки из полученного сообщения
+	commandFromServer = commandFromServer[:len(commandFromServer)-1]
+	// Выводим полученное сообщение в консоль
+	fmt.Println(commandFromServer)
+	// Закрываем соединение
+	conn.Close()
+	// Выполняем принятую команду
+	commands.Execute(commandFromServer)
 }
 
 // ФУНКЦИЯ для сохранения карты(map) с командами в json файле
