@@ -49,6 +49,19 @@
   ],
   "Description": "Воспроизводит музыку через Windows Media Player"
  },
+ "RiskOfRain": {
+  "Category": "fun",
+  "Args": [
+   "cmd",
+   "/C",
+   "start",
+   "Z:\\No_Laitis\\ROR2.mp3",
+   "\u0026\u0026",
+   "start",
+   "Z:\\No_Laitis\\ROR2Dance.gif"
+  ],
+  "Description": "Выводит список файлов и папок текущей директории"
+ },
  "dir": {
   "Category": "",
   "Args": [

@@ -41,7 +41,7 @@ func main() {
 		Description: "SHUE PPsh",
 	})
 
-	commands.Execute("Play_92")
+	//commands.Execute("Play_92")
 
 	// Вывод всех команд
 	//selectAllFrom(commands)
@@ -51,7 +51,7 @@ func main() {
 
 	// Сохранение обновленной карты команд в файл
 	saveCommandsToFile("commands.json", commands)
-
+	//Слушаем порт :4545 по протоколу tcp
 	createTCPListener("tcp", ":4545", commands)
 
 }
