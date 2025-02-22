@@ -4,9 +4,13 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"os/exec"
+	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 /*
@@ -21,12 +25,14 @@ type commandStruct struct {
 }
 type commandMap map[string]commandStruct
 
+var commands commandMap
+
 // MAIN
 func main() {
 	//defer finish()
 
 	// Загрузка существующих команд из файла
-	commands := loadCommandsFromFile("commands.json")
+	commands = loadCommandsFromFile("commands.json")
 
 	// Добавление новых команд
 	commands = addCommand(commands, "Hello, world!", commandStruct{
@@ -51,33 +57,77 @@ func main() {
 
 	// Сохранение обновленной карты команд в файл
 	saveCommandsToFile("commands.json", commands)
-	//Слушаем порт :4545 по протоколу tcp
-	createTCPListener("tcp", ":4545", commands)
+
+	// Запуск выполнения приветственной команды
+	executeCommand("Message")
+
+	//Подключение к серверу и запуск прослушки и выполнения команд от сервера
+	connectToWebSocket()
 
 }
 
-// ЗАПУСК ПРОСЛУШКИ ЗАПРОСОВ. Принимает тип протокола, порт(адрес) и переменную commands для функции handleConnection(не совсем понимаю, что тут происходит, но походу тут метод Execute не видит command, так как он не определен в этой функции)
-func createTCPListener(protocol string, port string, commands commandMap) {
-	// Создаем listener
-	fmt.Printf("Клиент принимает запросы по протоколу %s на порту %s\n", protocol, port)
-	listener, err := net.Listen(protocol, port)
-	if err != nil {
-		fmt.Println(err, "❗ОШИБКА СОЕДИНЕНИЯ С СЕРВЕРОМ❗")
+// Подключение к WebSocket серверу и обработка команд
+func connectToWebSocket() {
+	var conn *websocket.Conn
+	var err error
+
+	// Устанавливаем соединение с сервером
+	for {
+		conn, _, err = websocket.DefaultDialer.Dial("ws://localhost:8282/ws", nil)
+		if err != nil {
+			for {
+				// Цикл попыток подключения к серверу
+				log.Printf("❌ Ошибка подключения к WebSocket: %v", err)
+				log.Println("Попытка переподключения через 10 секунд")
+				// Отсчет 10 секунд
+				for i := 1; i <= 10; i++ {
+					time.Sleep(1 * time.Second)
+					fmt.Printf("%d...", i)
+				}
+				fmt.Println("\nПопытка переподключения...")
+				break
+			}
+		} else {
+			break
+		}
+	}
+	// Закрываем соединение в случае выхода из цикла ожидания сообщений(если программа завершится пользователем)
+	defer conn.Close()
+	log.Println("✔️ Подключено к WebSocket серверу")
+	// Цикл ожидания сообщений от сервера
+	for {
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			log.Println("Ошибка при получении сообщения:", err)
+			break
+		}
+		command := string(message)
+		log.Println("Получена команда:", command)
+		// Выполняем команду
+		executeCommand(command)
+	}
+}
+
+// Выполнение переданной команды в cmd
+func executeCommand(command string) {
+	cmdInfo, ok := commands[command]
+	if !ok {
+		fmt.Printf("\nКоманда \"%s\" не найдена\n", command)
 		return
 	}
-	defer listener.Close() // Закрываем listener при завершении работы
-	fmt.Println("Client is listening...")
-
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		// Обрабатываем каждое соединение в отдельной горутине
-		go handleConnection(conn, commands)
+	if len(cmdInfo.Args) == 0 {
+		fmt.Printf("В команде \"%s\" нет аргументов", command)
+		return
 	}
-
+	log.Printf("Выполнение команды: %s", command)
+	cmd := exec.Command(cmdInfo.Args[0], cmdInfo.Args[1:]...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("Ошибка выполнения команды: %v\n", err)
+		log.Printf("Вывод команды: %s\n", output)
+		return
+	}
+	log.Printf("Результат:\n%s\n", output)
 }
 
 // ФУНКЦИЯ для обработки входящего соединения. Из входящего запроса от сервера получает данные и передает их в command.Execute для выполнения
@@ -110,7 +160,7 @@ func saveCommandsToFile(filename string, commands commandMap) {
 	}
 
 	// Открытие файла для записи или создание файла для записи, если он еще не создан
-	file, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0) // os.O_WRONLY - только запись, os.O_CREATE - создание файла при его отсутствии, os.O_TRUNC - стирание данных файла
+	file, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666) // os.O_WRONLY - только запись, os.O_CREATE - создание файла при его отсутствии, os.O_TRUNC - стирание данных файла
 	if err != nil {
 		fmt.Println("Ошибка при открытии файла: ", err)
 		return
