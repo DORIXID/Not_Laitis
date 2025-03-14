@@ -2,10 +2,13 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"time"
@@ -17,19 +20,40 @@ import (
 
  */
 
-// CREATE TABLE command
+// Определение структуры для хранения команды из json файла
 type commandStruct struct {
 	Category    string   `json:"Category"`
 	Args        []string `json:"Args"`
 	Description string   `json:"Description"`
 }
+
+// Определение карты для хранения структур с командами из json файла
 type commandMap map[string]commandStruct
 
+// Переменная с картой со структурами, хранящими команды и их атрибуты
 var commands commandMap
+
+// Структура для данных регистрации или авторизации
+type RegisterRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
 
 // MAIN
 func main() {
 	//defer finish()
+
+	// URL путь для регистрации и логина
+	registerURL := "http://185.72.144.59:80/register"
+	loginURL := "http://185.72.144.59:80/login"
+	// URL для подключения к WebSocket серверу
+	wsURL := "ws://185.72.144.59:80/ws"
+
+	// При первом запуске файла создается пустой файл
+	if _, err := os.OpenFile("commands.json", os.O_WRONLY|os.O_CREATE, 0666); err != nil {
+		fmt.Println("Ошибка при создании файла commands.json: ", err)
+		return
+	}
 
 	// Загрузка существующих команд из файла
 	commands = loadCommandsFromFile("commands.json")
@@ -39,6 +63,12 @@ func main() {
 		Category:    "system",
 		Args:        []string{"cmd", "/C", "msg * \"Выполнение команд работает корректно!\""},
 		Description: "Выводит на экран сообщение об успешном запуске программы",
+	})
+
+	commands = addCommand(commands, "offComp", commandStruct{
+		Category:    "system",
+		Args:        []string{"cmd", "/C", "shutdown /s /t 60"},
+		Description: "Завершает работу пк через 60 секунд",
 	})
 
 	//commands.Execute("Play_92")
@@ -53,52 +83,226 @@ func main() {
 	saveCommandsToFile("commands.json", commands)
 
 	// Запуск выполнения приветственной команды
-	executeCommand("Message")
+	//executeCommand("Message")
 
-	//Подключение к серверу и запуск прослушки и выполнения команд от сервера
-	connectToWebSocket()
-
+	//Загружаем токен
+	token, err := loadString(".token")
+	if err != nil {
+		var resp string
+		log.Println("⚠️ Токен не найден, требуется авторизация или регистрация")
+		for {
+			fmt.Print("\nВведите \"Р\", если хотите зарегистрироваться или \"Л\", если хотите авторизоваться: ")
+			fmt.Fscan(os.Stdin, &resp)
+			var login string
+			var password string
+			if resp == "Р" {
+				fmt.Print("\nВведите логин: ")
+				fmt.Fscan(os.Stdin, &login)
+				fmt.Print("\nВведите пароль: ")
+				fmt.Fscan(os.Stdin, &password)
+				if err := registerUser(registerURL, login, password); err != nil {
+					fmt.Printf("Ошибка при регистрации: %v", err)
+					continue
+				}
+				fmt.Println("Вы успешно зарегистрировались, теперь необходимо авторизоваться с помощью вашего логина и пароля")
+			} else if resp == "Л" {
+				fmt.Print("\nВведите логин: ")
+				fmt.Fscan(os.Stdin, &login)
+				fmt.Print("\nВведите пароль: ")
+				fmt.Fscan(os.Stdin, &password)
+				if err := loginUser(loginURL, login, password); err != nil {
+					fmt.Printf("Ошибка при авторизации: %v", err)
+					continue
+				}
+				fmt.Println("Вы успешно вошли в систему")
+				log.Println("🔑 Загружен токен:", token)
+				// Загружаем из файла rKey и генерируем ссылку для удаленной активации команд
+				rKey, err := loadString(".rKey")
+				if err != nil {
+					log.Println("Ошибка при загрузке rKey: ", err)
+					return
+				}
+				fmt.Printf("Ваша ссылка для удалённого запуска команд: \nhttp://185.72.144.59:80/run?user=%s&cmd=ВашаКоманда\n", rKey)
+				//Подключаемся по ws
+				connectToWS(wsURL)
+			} else {
+				fmt.Print("\nНеверно введен ответ")
+			}
+		}
+	} else {
+		log.Println("🔑 Загружен токен:", token)
+		// Загружаем из файла rKey и генерируем ссылку для удаленной активации команд
+		rKey, err := loadString(".rKey")
+		if err != nil {
+			log.Println("Ошибка при загрузке rKey: ", err)
+			return
+		}
+		fmt.Printf("Ваша ссылка для удалённого запуска команд: \nhttp://185.72.144.59:80/run?user=%s&cmd=ВашаКоманда\n", rKey)
+		//Подключаемся по ws
+		connectToWS(wsURL)
+	}
 }
 
-// Подключение к WebSocket серверу и обработка команд
-func connectToWebSocket() {
-	var conn *websocket.Conn
-	var err error
+// Функция для отправки запроса на регистрацию
+func registerUser(url string, username string, password string) error {
+	// Создаем структуру с данными регистрации
+	reqData := RegisterRequest{
+		Username: username,
+		Password: password,
+	}
 
-	// Устанавливаем соединение с сервером
+	// Сериализуем данные в JSON
+	jsonData, err := json.Marshal(reqData)
+	if err != nil {
+		return fmt.Errorf("ошибка сериализации данных: %v", err)
+	}
+
+	// Отправляем POST-запрос на сервер
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("ошибка отправки запроса: %v", err)
+	}
+	// Закрываем ответ от сервера при завершении функции для избежания утечки памяти
+	defer resp.Body.Close()
+
+	// Проверяем статус-код ответа
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("ошибка регистрации: %s", resp.Status)
+	}
+
+	// Читаем тело ответа
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("ошибка чтения ответа: %v", err)
+	}
+
+	// Сохраняем randomKey в файл
+	randomKey := string(body)
+	fmt.Println("Регистрация успешна, получен randomKey:", randomKey)
+	if err := saveString(randomKey, ".rKey"); err != nil {
+		return fmt.Errorf("Ошибка сохранения rKey: %v", err)
+	}
+
+	return nil
+}
+
+// Функция для отправки запроса на автоизацию
+func loginUser(url string, username string, password string) error {
+	// Создаем структуру с данными авторизации(используя структуру для регистрации)
+	reqData := RegisterRequest{
+		Username: username,
+		Password: password,
+	}
+
+	// Сериализуем данные в JSON
+	jsonData, err := json.Marshal(reqData)
+	if err != nil {
+		return fmt.Errorf("ошибка сериализации данных: %v", err)
+	}
+
+	// Отправляем POST-запрос на сервер
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("ошибка отправки запроса: %v", err)
+	}
+	//Закрываем(удаляем) соединение от сервера при завершении функции для избежания утечки памяти
+	defer resp.Body.Close()
+
+	// Проверяем статус-код ответа
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("ошибка Авторизации: %s", resp.Status)
+	}
+
+	// Читаем тело ответа
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("ошибка чтения ответа: %v", err)
+	}
+
+	// Десериализуем ответ в структуру
+	var loginResp map[string]string
+	if err := json.Unmarshal(body, &loginResp); err != nil {
+		return fmt.Errorf("ошибка десериализации ответа: %v", err)
+	}
+
+	// Сохраняем токен
+	token, ok := loginResp["token"]
+	if !ok {
+		return fmt.Errorf("токен не найден в ответе")
+	}
+	if err := saveString(token, ".token"); err != nil {
+		return fmt.Errorf("ошибка сохранения токена: %v", err)
+	}
+
+	// Сохраняем токен
+	rKey, ok := loginResp["rKey"]
+	if !ok {
+		return fmt.Errorf("токен не найден в ответе")
+	}
+	if err := saveString(rKey, ".rKey"); err != nil {
+		return fmt.Errorf("ошибка сохранения токена: %v", err)
+	}
+
+	fmt.Println("Авторизация успешно пройдена, токен сохранен")
+	return nil
+}
+
+// Сохранение string в файл
+func saveString(varString string, filename string) error {
+	// Создаем или записываем в существующий файл varString, преобразуя его в байтовый список
+	return os.WriteFile(filename, []byte(varString), 0600) // Доступ только владельцу
+}
+
+// Загрузка string из файла
+func loadString(filename string) (string, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// Функция для подключения к WebSocket серверу с использованием JWT токена
+func connectToWS(url string) {
+	// Заголовки для аутентификации
+	token, err := loadString(".token")
+	if err != nil {
+		log.Println("Ошибка при чтении токена: ", err)
+		return
+	}
+	headers := http.Header{}
+	headers.Add("Authorization", "Bearer "+token) // Я кста не знаю есть ли смысл добавлять Bearer т к на стороне сервера он все равно игнорируется
+	// беконечный цикл подключения к серверу и обработки команд при удачном подключении
+
 	for {
-		conn, _, err = websocket.DefaultDialer.Dial("ws://185.72.144.59:443/ws", nil)
+		//Пробуем подключиться
+		//Если подключиться не удается, то через 10 секунд запускаем цикл заново и пытаемся подключиться
+		conn, _, err := websocket.DefaultDialer.Dial(url, headers)
 		if err != nil {
-			for {
-				// Цикл попыток подключения к серверу
-				log.Printf("❌ Ошибка подключения к WebSocket: %v", err)
-				log.Println("Попытка переподключения через 10 секунд")
-				// Отсчет 10 секунд
-				for i := 1; i <= 10; i++ {
-					time.Sleep(1 * time.Second)
-					fmt.Printf("%d...", i)
-				}
-				fmt.Println("\nПопытка переподключения...")
+			log.Printf("❌ Ошибка подключения к WebSocket: %v", err)
+			log.Println("Попытка переподключения через 5 секунд")
+			for i := 4; i != 0; i-- {
+				fmt.Printf("%d...", i)
+				time.Sleep(1 * time.Second)
+			}
+			fmt.Println("")
+			continue
+		}
+
+		log.Println("✔️ Успешно подключено к WebSocket серверу")
+
+		// Чтение сообщений от сервера
+		for {
+			_, message, err := conn.ReadMessage()
+			if err != nil {
+				log.Println("Ошибка при получении сообщения:", err)
+				conn.Close() // Явно закрываем перед новой попыткой подключения
 				break
 			}
-		} else {
-			break
+			command := string(message)
+			log.Println("Получена команда:", command)
+			go executeCommand(command)
 		}
-	}
-	// Закрываем соединение в случае выхода из цикла ожидания сообщений(если программа завершится пользователем)
-	defer conn.Close()
-	log.Println("✔️ Успешно подключено к WebSocket серверу")
-	// Цикл ожидания сообщений от сервера
-	for {
-		_, message, err := conn.ReadMessage()
-		if err != nil {
-			log.Println("Ошибка при получении сообщения:", err)
-			break
-		}
-		command := string(message)
-		log.Println("Получена команда:", command)
-		// Выполняем команду
-		executeCommand(command)
 	}
 }
 
@@ -267,10 +471,6 @@ func (mapp commandMap) Execute(key string) {
 type Executable interface {
 	Execute(key string)
 }
-
-///func (имя_параметра тип_получателя) имя_метода (параметры) (типы_возвращаемых_результатов){
-///    тело_метода
-///}
 
 // DEFER-FUNCTION - выводит в терминал "Программа завершена" и закрывает файл json
 func finish() {

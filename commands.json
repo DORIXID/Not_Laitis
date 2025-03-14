@@ -30,15 +30,6 @@
   ],
   "Description": "Выводит на экран \"Выполнение команд работает корректно!\""
  },
- "Ping Google": {
-  "Category": "",
-  "Args": [
-   "cmd",
-   "/C",
-   "ping google.com"
-  ],
-  "Description": "Проверяет доступность Google."
- },
  "Play_92": {
   "Category": "media",
   "Args": [
@@ -62,6 +53,15 @@
   ],
   "Description": "Выводит список файлов и папок текущей директории"
  },
+ "Start message": {
+  "Category": "system",
+  "Args": [
+   "cmd",
+   "/C",
+   "msg * \"Выполнение команд работает корректно!\""
+  ],
+  "Description": "Выводит на экран сообщение об успешном запуске программы"
+ },
  "dir": {
   "Category": "",
   "Args": [
@@ -70,5 +70,14 @@
    "dir"
   ],
   "Description": "Выводит список файлов и папок текущей директории"
+ },
+ "offComp": {
+  "Category": "system",
+  "Args": [
+   "cmd",
+   "/C",
+   "shutdown /s /t 60"
+  ],
+  "Description": "Завершает работу пк через 60 секунд"
  }
 }
